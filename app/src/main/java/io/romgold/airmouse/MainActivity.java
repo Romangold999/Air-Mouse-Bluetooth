@@ -175,19 +175,57 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
 
     private void connectTo(BluetoothDevice device) {
-        if (hid == null || !appRegistered) { setStatus("Профиль Bluetooth HID не зарегистрирован"); return; }
+        if (hid == null || !appRegistered) {
+            connecting = false;
+            setStatus("Профиль HID не зарегистрирован — телефон не может выступать Bluetooth-мышью");
+            return;
+        }
         try {
-            target = device; connecting = true;
-            setDevice(safeName(device)); setStatus("Отправляем запрос подключения…");
+            target = device;
+            connecting = true;
+            String name = safeName(device);
+            setDevice("Запрос к " + name);
+            setStatus("Отправляем HID-запрос устройству " + name + "…");
+            Toast.makeText(this, "Проверяем подключение к " + name, Toast.LENGTH_SHORT).show();
+
             boolean accepted = hid.connect(device);
             if (!accepted) {
                 connecting = false;
-                setStatus("Телефон отклонил запрос HID. Возможно, ТВ не поддерживает HID-мышь");
-            } else setStatus("Запрос отправлен. Ожидаем подтверждение телевизора…");
+                setDevice(name + " не подключён");
+                setStatus("Android отклонил HID-запрос. Телевизор не получил команду мыши");
+                return;
+            }
+
+            setStatus("HID-запрос принят телефоном. Проверяем ответ телевизора…");
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (hid == null || target == null || !target.equals(device)) return;
+                try {
+                    int state = hid.getConnectionState(device);
+                    if (state == BluetoothProfile.STATE_CONNECTED) {
+                        connecting = false;
+                        setDevice(name);
+                        setStatus("HID-мышь подключена к " + name);
+                    } else if (state == BluetoothProfile.STATE_CONNECTING) {
+                        setStatus("Телевизор устанавливает HID-соединение…");
+                    } else {
+                        connecting = false;
+                        setDevice(name + " — HID не подключён");
+                        setStatus("Телефон отправил HID-запрос, но SHARP не установил соединение. Возможно, ТВ не принимает профиль Bluetooth-мыши");
+                    }
+                } catch (SecurityException e) {
+                    connecting = false;
+                    setStatus("Нет разрешения проверить состояние Bluetooth HID");
+                } catch (Exception e) {
+                    connecting = false;
+                    setStatus("Не удалось проверить HID-соединение: " + e.getMessage());
+                }
+            }, 4000);
         } catch (SecurityException e) {
-            connecting = false; setStatus("Нет разрешения Bluetooth CONNECT");
+            connecting = false;
+            setStatus("Нет разрешения Bluetooth CONNECT");
         } catch (Exception e) {
-            connecting = false; setStatus("Не удалось подключиться: " + e.getMessage());
+            connecting = false;
+            setStatus("Ошибка HID-подключения: " + e.getMessage());
         }
     }
 
