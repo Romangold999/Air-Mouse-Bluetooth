@@ -44,12 +44,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             if (profile != BluetoothProfile.HID_DEVICE) return;
             hid = (BluetoothHidDevice) proxy;
             try {
-                BluetoothHidDeviceAppSdpSettings sdp = new BluetoothHidDeviceAppSdpSettings(
-                    "Air Mouse", "Bluetooth touchpad and gyro mouse", "Romgold",
-                    BluetoothHidDevice.SUBCLASS1_MOUSE, MOUSE_DESCRIPTOR);
-                boolean ok = hid.registerApp(sdp, null, null, executor, hidCallback);
-                setStatus(ok ? "Bluetooth HID зарегистрирован" : "Телефон отказал в регистрации HID");
-                if (!ok) setDevice("HID недоступен — проверь поддержку телефона");
+                registerHidApp();
             } catch (SecurityException e) {
                 setStatus("Нет разрешения на управление Bluetooth");
             } catch (Exception e) {
@@ -62,10 +57,33 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     };
 
+    private void registerHidApp() {
+        if (hid == null || appRegistered) return;
+        try {
+            BluetoothHidDeviceAppSdpSettings sdp = new BluetoothHidDeviceAppSdpSettings(
+                "Air Mouse", "Bluetooth touchpad and gyro mouse", "Romgold",
+                BluetoothHidDevice.SUBCLASS1_MOUSE, MOUSE_DESCRIPTOR);
+            boolean accepted = hid.registerApp(sdp, null, null, executor, hidCallback);
+            setStatus(accepted
+                ? "Android принял запрос регистрации HID — ждём подтверждение"
+                : "Android отклонил регистрацию HID");
+            if (!accepted) setDevice("HID не зарегистрирован");
+        } catch (SecurityException e) {
+            setStatus("Нет разрешения на регистрацию Bluetooth HID");
+        } catch (Exception e) {
+            setStatus("Ошибка регистрации HID: " + e.getMessage());
+        }
+    }
+
     private final BluetoothHidDevice.Callback hidCallback = new BluetoothHidDevice.Callback() {
         @Override public void onAppStatusChanged(BluetoothDevice pluggedDevice, boolean registered) {
             appRegistered = registered;
-            setStatus(registered ? "Готово к сопряжению с телевизором" : "Регистрация Bluetooth HID снята");
+            if (registered) {
+                setStatus("Bluetooth HID зарегистрирован — телефон готов к подключению");
+            } else {
+                hidConnected = false;
+                setStatus("Регистрация HID снята Android; при возвращении в приложение восстановим её");
+            }
         }
         @Override public void onConnectionStateChanged(BluetoothDevice device, int state) {
             if (state == BluetoothProfile.STATE_CONNECTED) {
@@ -241,8 +259,14 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private void sendMouse(int buttons, int dx, int dy, int wheel) {
         if (hid == null || target == null || !appRegistered) return;
+        if (!hidConnected) {
+            if (buttons != 0 || dx != 0 || dy != 0 || wheel != 0)
+                setStatus("Сначала подключи телевизор как HID-мышь");
+            return;
+        }
         try {
-            hid.sendReport(target, REPORT_ID, new byte[]{(byte)buttons,(byte)clamp(dx),(byte)clamp(dy),(byte)clamp(wheel)});
+            boolean sent = hid.sendReport(target, REPORT_ID, new byte[]{(byte)buttons,(byte)clamp(dx),(byte)clamp(dy),(byte)clamp(wheel)});
+            if (!sent) setStatus("Android не отправил HID-команду — проверь соединение");
         } catch (Exception e) { setStatus("Ошибка отправки команды мыши"); }
     }
     private void click(int button) { sendMouse(button,0,0,0); sendMouse(0,0,0,0); }
@@ -285,7 +309,12 @@ public class MainActivity extends Activity implements SensorEventListener {
     }
     @Override public void onAccuracyChanged(Sensor s,int a) {}
     @Override protected void onPause(){super.onPause();if(sensors!=null)sensors.unregisterListener(this);lastSensor=0;}
-    @Override protected void onResume(){super.onResume();if(airMode&&gyro!=null)sensors.registerListener(this,gyro,SensorManager.SENSOR_DELAY_GAME);}
+    @Override protected void onResume(){
+        super.onResume();
+        if (airMode && gyro != null) sensors.registerListener(this, gyro, SensorManager.SENSOR_DELAY_GAME);
+        // Android unregisters HID apps while they are not foreground; restore on return.
+        if (hid != null && !appRegistered) registerHidApp();
+    }
     @Override public void onRequestPermissionsResult(int r,String[] p,int[] g) {
         super.onRequestPermissionsResult(r,p,g);
         if(r==REQ_BT) {
@@ -364,7 +393,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                 case MotionEvent.ACTION_DOWN:
                     downX=lastX=x;downY=lastY=y;moved=false;padGesture=(x>=20&&x<=370&&y>=369&&y<=646);return true;
                 case MotionEvent.ACTION_MOVE:
-                    if(padGesture && !airMode && target!=null) {
+                    if(padGesture && !airMode && target!=null && hidConnected) {
                         float dx=(x-lastX)*.78f,dy=(y-lastY)*.78f;
                         if(Math.abs(x-downX)+Math.abs(y-downY)>5)moved=true;
                         int ix=Math.round(dx),iy=Math.round(dy);
