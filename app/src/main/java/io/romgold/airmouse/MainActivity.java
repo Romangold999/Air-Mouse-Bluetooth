@@ -21,7 +21,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private BluetoothDevice target;
     private SensorManager sensors;
     private Sensor gyro;
-    private boolean airMode = false, appRegistered = false, connecting = false;
+    private boolean airMode = false, appRegistered = false, connecting = false, hidConnected = false, connectRequested = false;
     private float sensitivity = 1.8f, smooth = .30f, filteredX, filteredY;
     private long lastSensor;
     private AirMouseView ui;
@@ -69,14 +69,22 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
         @Override public void onConnectionStateChanged(BluetoothDevice device, int state) {
             if (state == BluetoothProfile.STATE_CONNECTED) {
-                target = device; connecting = false;
-                setDevice(safeName(device)); setStatus("Подключено по Bluetooth");
+                target = device; connecting = false; hidConnected = true; connectRequested = false;
+                setDevice(safeName(device)); setStatus("HID-мышь подключена к " + safeName(device));
             } else if (state == BluetoothProfile.STATE_CONNECTING) {
-                target = device; connecting = true; setStatus("Устанавливаем соединение…");
+                target = device; connecting = true; hidConnected = false;
+                setStatus("Телевизор устанавливает HID-соединение…");
             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
-                if (target != null && target.equals(device)) target = null;
-                connecting = false; setDevice("Телевизор не подключён");
-                setStatus("Отключено. Нажми «Подключить»");
+                boolean wasRequested = connectRequested && target != null && target.equals(device);
+                connecting = false; hidConnected = false;
+                if (wasRequested) {
+                    setDevice(safeName(device) + " — HID отклонён");
+                    setStatus("SHARP не установил соединение HID-мыши. Обычное сопряжение Bluetooth не равно подключению мыши");
+                } else {
+                    setDevice("Телевизор не подключён");
+                    setStatus("HID-соединение отсутствует. Нажми «Подключить»");
+                }
+                connectRequested = false;
             }
         }
     };
@@ -183,6 +191,8 @@ public class MainActivity extends Activity implements SensorEventListener {
         try {
             target = device;
             connecting = true;
+            hidConnected = false;
+            connectRequested = true;
             String name = safeName(device);
             setDevice("Запрос к " + name);
             setStatus("Отправляем HID-запрос устройству " + name + "…");
