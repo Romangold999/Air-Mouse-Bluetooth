@@ -38,8 +38,8 @@ jobs:
       - name: Publish test APK release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: test-build-${{ github.run_number }}
-          name: Air Mouse Bluetooth — test build ${{ github.run_number }}
+          tag_name: test-build-1
+          name: Air Mouse Bluetooth — актуальная версия
           target_commitish: ${{ github.sha }}
           files: release/AirMouse-Bluetooth.apk
           make_latest: false
