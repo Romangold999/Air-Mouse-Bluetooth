@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'io.romgold.airmouse'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.romgold.airmouse'
+        minSdk 28
+        targetSdk 32
+        versionCode 1
+        versionName '1.0.0'
+    }
+}
